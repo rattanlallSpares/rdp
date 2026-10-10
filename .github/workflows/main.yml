@@ -47,16 +47,15 @@ jobs:
           }
 
       # ─────────────────────────────────────────────
-      # STEP 3: Enable Remote Desktop & Set Credentials
+      # STEP 3: Enable Remote Desktop
       # ─────────────────────────────────────────────
       - name: Enable Remote Desktop (RDP)
         run: |
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
-          
-          Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "Admin@12345" -Force)
-          Write-Host "RDP Enabled. Username: runneradmin | Password: Admin@12345"
+          Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "p@ssw0rd!" -Force)
+          Write-Host "RDP Enabled. Username: runneradmin | Password: p@ssw0rd!"
 
       # ─────────────────────────────────────────────
       # STEP 4: Setup Work Directories & Session Info
@@ -70,7 +69,7 @@ jobs:
           === RDP Session Info ===
           Started: $(Get-Date)
           Username: runneradmin
-          Password: Admin@12345
+          Password: p@ssw0rd!
           
           Your files are saved in: C:\Users\runneradmin\Desktop\MyWork
           Checkpoints auto-save every 50 minutes.
@@ -78,22 +77,41 @@ jobs:
           Set-Content -Path "C:\Users\runneradmin\Desktop\SESSION_INFO.txt" -Value $sessionInfo
 
       # ─────────────────────────────────────────────
-      # STEP 5: Start LocalTunnel (No Interactive Terminal Error)
+      # STEP 5: Download and Start Ngrok TCP Tunnel
       # ─────────────────────────────────────────────
-      - name: Start RDP Tunnel
+      - name: Start Ngrok TCP Tunnel
         run: |
-          Write-Host "Installing LocalTunnel..."
-          npm install -g localtunnel
+          Write-Host "Downloading Ngrok..."
+          Invoke-WebRequest -Uri https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip -OutFile ngrok.zip
+          Expand-Archive ngrok.zip -DestinationPath "$env:USERPROFILE" -Force
           
-          Write-Host "Starting tunnel for port 3389..."
-          Start-Process -FilePath "lt" -ArgumentList "--port 3389" -NoNewWindow
-          
-          Write-Host "Tunnel initiated successfully."
-          Write-Host "============================================================"
-          Write-Host " Login Credentials:                                         "
-          Write-Host " - Username: runneradmin                                    "
-          Write-Host " - Password: Admin@12345                                    "
-          Write-Host "============================================================"
+          # Configure your provided Ngrok Authtoken
+          Write-Host "Configuring Ngrok Authtoken..."
+          & "$env:USERPROFILE\ngrok.exe" config add-authtoken "3KV0DEtfhjBSZs2HAF01yakaM27_64mWy6X7JFrRbWUjFsXGM"
+
+          Write-Host "Starting Ngrok TCP tunnel for port 3389..."
+          Start-Process -FilePath "$env:USERPROFILE\ngrok.exe" -ArgumentList "tcp 3389" -NoNewWindow
+          Start-Sleep -Seconds 5
+
+          # Automatically parse and output the public TCP address from Ngrok's local API
+          try {
+            $response = Invoke-RestMethod -Uri "http://127.0.0.1:4040/api/tunnels"
+            $tcpTunnel = $response.tunnels | Where-Object { $_.proto -eq "tcp" }
+            $publicUrl = $tcpTunnel.public_url # Example: tcp://0.tcp.in.ngrok.io:12345
+            
+            Write-Host "============================================================"
+            Write-Host " RDP DIRECT CONNECTION DETAILS                              "
+            Write-Host "============================================================"
+            Write-Host " Copy this address into Windows Remote Desktop (mstsc):     "
+            Write-Host " $publicUrl                                                 "
+            Write-Host "------------------------------------------------------------"
+            Write-Host " Login Credentials:                                         "
+            Write-Host " - Username: runneradmin                                    "
+            Write-Host " - Password: p@ssw0rd!                                      "
+            Write-Host "============================================================"
+          } catch {
+            Write-Host "Could not automatically parse tunnel URL. Please check live runner logs above."
+          }
 
       # ─────────────────────────────────────────────
       # STEP 6: Auto-checkpoint loop + keep alive
