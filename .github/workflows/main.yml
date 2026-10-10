@@ -55,7 +55,6 @@ jobs:
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
           
-          # Using runneradmin with a valid secure password that passes Windows complexity rules
           Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "Admin@12345" -Force)
           Write-Host "RDP Enabled. Username: runneradmin | Password: Admin@12345"
 
@@ -79,52 +78,33 @@ jobs:
           Set-Content -Path "C:\Users\runneradmin\Desktop\SESSION_INFO.txt" -Value $sessionInfo
 
       # ─────────────────────────────────────────────
-      # STEP 5: Download and Start Ngrok TCP Tunnel (With Auto-Print)
+      # STEP 5: Start Pinggy TCP Tunnel (Zero Config / Free)
       # ─────────────────────────────────────────────
-      - name: Start Ngrok TCP Tunnel
+      - name: Start Pinggy TCP Tunnel
         run: |
-          Write-Host "Downloading Ngrok..."
-          Invoke-WebRequest -Uri https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip -OutFile ngrok.zip
-          Expand-Archive ngrok.zip -DestinationPath "$env:USERPROFILE" -Force
+          Write-Host "Starting Pinggy TCP tunnel for port 3389..."
           
-          # Configure your Ngrok Authtoken
-          Write-Host "Configuring Ngrok Authtoken..."
-          & "$env:USERPROFILE\ngrok.exe" config add-authtoken "3KV0DEtfhjBSZs2HAF01yakaM27_64mWy6X7JFrRbWUjFsXGM"
-
-          Write-Host "Starting Ngrok TCP tunnel for port 3389..."
-          Start-Process -FilePath "$env:USERPROFILE\ngrok.exe" -ArgumentList "tcp 3389" -NoNewWindow
+          # Start SSH tunnel in a background PowerShell job so it stays open
+          $job = Start-Job -ScriptBlock {
+              ssh -p 443 -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -R0:localhost:3389 tcp@free.pinggy.io
+          }
           
-          # Wait and poll Ngrok API until the public TCP address is assigned
-          Write-Host "Waiting for Ngrok tunnel connection..."
-          $publicUrl = ""
-          for ($i = 0; $i -lt 15; $i++) {
-            Start-Sleep -Seconds 2
-            try {
-              $response = Invoke-RestMethod -Uri "http://127.0.0.1:4040/api/tunnels" -ErrorAction SilentlyContinue
-              $tcpTunnel = $response.tunnels | Where-Object { $_.proto -eq "tcp" }
-              if ($tcpTunnel) {
-                $publicUrl = $tcpTunnel.public_url
-                break
-              }
-            } catch {
-              # Keep retrying if API isn't up yet
-            }
-          }
-
-          if ($publicUrl) {
-            Write-Host "============================================================"
-            Write-Host " RDP DIRECT CONNECTION DETAILS                              "
-            Write-Host "============================================================"
-            Write-Host " Copy this address into Windows Remote Desktop (mstsc):     "
-            Write-Host " $publicUrl                                                 "
-            Write-Host "------------------------------------------------------------"
-            Write-Host " Login Credentials:                                         "
-            Write-Host " - Username: runneradmin                                    "
-            Write-Host " - Password: Admin@12345                                    "
-            Write-Host "============================================================"
-          } else {
-            Write-Error "Failed to retrieve Ngrok TCP tunnel URL. Please check the runner logs."
-          }
+          # Wait a few seconds for connection and URL generation
+          Start-Sleep -Seconds 7
+          
+          # Fetch job output to display the public URL in the logs
+          $output = Receive-Job -Job $job
+          
+          Write-Host "============================================================"
+          Write-Host " RDP DIRECT CONNECTION DETAILS (Pinggy Tunnel)              "
+          Write-Host "============================================================"
+          Write-Host " Copy the tcp:// address below into Windows RDP (mstsc):    "
+          Write-Host $output
+          Write-Host "------------------------------------------------------------"
+          Write-Host " Login Credentials:                                         "
+          Write-Host " - Username: runneradmin                                    "
+          Write-Host " - Password: Admin@12345                                    "
+          Write-Host "============================================================"
 
       # ─────────────────────────────────────────────
       # STEP 6: Auto-checkpoint loop + keep alive
