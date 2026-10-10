@@ -1,0 +1,132 @@
+name: Playit RDP Tunnel (With Checkpoint Resume)
+
+on:
+  workflow_dispatch:
+    inputs:
+      restore_checkpoint:
+        description: 'Restore from last checkpoint? (yes/no)'
+        required: false
+        default: 'yes'
+
+jobs:
+  setup-automation:
+    runs-on: windows-latest
+    timeout-minutes: 360  # 6 hours max
+
+    steps:
+      # ─────────────────────────────────────────────
+      # STEP 1: Checkout repo
+      # ─────────────────────────────────────────────
+      - name: Check out the repository
+        uses: actions/checkout@v3
+
+      # ─────────────────────────────────────────────
+      # STEP 2: Restore checkpoint from cache
+      # ─────────────────────────────────────────────
+      - name: Restore Checkpoint Cache
+        id: restore-cache
+        if: ${{ github.event.inputs.restore_checkpoint == 'yes' }}
+        uses: actions/cache@v3
+        with:
+          path: |
+            C:\MyWork
+            C:\checkpoint_data
+          key: rdp-checkpoint-main
+          restore-keys: |
+            rdp-checkpoint-
+
+      - name: Check Checkpoint Status
+        run: |
+          if (Test-Path "C:\checkpoint_data\checkpoint.txt") {
+            $info = Get-Content "C:\checkpoint_data\checkpoint.txt"
+            Write-Host "=== CHECKPOINT FOUND ==="
+            Write-Host $info
+            Write-Host "========================"
+          } else {
+            Write-Host "No checkpoint found - starting fresh session"
+          }
+
+      # ─────────────────────────────────────────────
+      # STEP 3: Setup Work Directories
+      # ─────────────────────────────────────────────
+      - name: Setup Work Directories
+        run: |
+          New-Item -ItemType Directory -Force -Path "C:\MyWork" | Out-Null
+          New-Item -ItemType Directory -Force -Path "C:\checkpoint_data" | Out-Null
+          
+          $sessionInfo = @"
+          === Automation Session Info ===
+          Started: $(Get-Date)
+          Working Directory: C:\MyWork
+          Checkpoints auto-save every 50 minutes.
+          "@
+          Set-Content -Path "C:\MyWork\SESSION_INFO.txt" -Value $sessionInfo
+
+      # ─────────────────────────────────────────────
+      # STEP 4: Main Execution / Task Placeholder
+      # ─────────────────────────────────────────────
+      - name: Run Workload / Tasks
+        run: |
+          Write-Host "Runner environment is active and ready."
+          # Place your custom scripts, builds, or data processing commands here:
+          # Example: python script.js or long-running processing task
+          
+      # ─────────────────────────────────────────────
+      # STEP 5: Auto-checkpoint loop + keep alive
+      # ─────────────────────────────────────────────
+      - name: Keep Alive + Auto Checkpoint Every 50 Minutes
+        run: |
+          $totalMinutes = 320   # ~5 hr 20 min (leaves buffer for final save)
+          $checkpointEvery = 50 # Save every 50 minutes
+          $elapsed = 0
+
+          Write-Host "Session running. Will auto-checkpoint every $checkpointEvery minutes."
+
+          while ($elapsed -lt $totalMinutes) {
+            $waitMinutes = [Math]::Min($checkpointEvery, $totalMinutes - $elapsed)
+            Write-Host "--- Sleeping $waitMinutes min | Total elapsed: $elapsed min ---"
+            Start-Sleep -Seconds ($waitMinutes * 60)
+            $elapsed += $waitMinutes
+
+            # Save checkpoint state
+            $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+            $checkpointText = @"
+          Last checkpoint: $timestamp
+          Session elapsed: $elapsed minutes
+          Files are in: C:\MyWork
+          "@
+            Set-Content -Path "C:\checkpoint_data\checkpoint.txt" -Value $checkpointText
+            Write-Host "=== CHECKPOINT SAVED at $timestamp (elapsed: $elapsed min) ==="
+          }
+
+          Write-Host "Session ending. Performing final checkpoint save..."
+
+      # ─────────────────────────────────────────────
+      # STEP 6: Final checkpoint save & cache upload
+      # ─────────────────────────────────────────────
+      - name: Save Final Checkpoint
+        if: always()
+        run: |
+          $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+          New-Item -ItemType Directory -Force -Path "C:\checkpoint_data" | Out-Null
+          Set-Content -Path "C:\checkpoint_data\checkpoint.txt" -Value "Last checkpoint: $timestamp`nSession ended gracefully."
+          Write-Host "Final checkpoint written at $timestamp"
+
+      - name: Upload Checkpoint as Artifact (Backup)
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: session-checkpoint-backup
+          path: |
+            C:\MyWork
+            C:\checkpoint_data\checkpoint.txt
+          retention-days: 30
+
+      - name: Save Checkpoint to Cache (For Next Run Resume)
+        if: always()
+        uses: actions/cache@v3
+        with:
+          path: |
+            C:\MyWork
+            C:\checkpoint_data
+          key: rdp-checkpoint-main
