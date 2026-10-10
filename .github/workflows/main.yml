@@ -29,7 +29,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: |
-            C:\Users\admin\Desktop\MyWork
+            C:\Users\runneradmin\Desktop\MyWork
             C:\checkpoint_data
           key: rdp-checkpoint-main
           restore-keys: |
@@ -47,7 +47,7 @@ jobs:
           }
 
       # ─────────────────────────────────────────────
-      # STEP 3: Enable Remote Desktop & Set Admin Credentials
+      # STEP 3: Enable Remote Desktop & Set Credentials
       # ─────────────────────────────────────────────
       - name: Enable Remote Desktop (RDP)
         run: |
@@ -55,36 +55,28 @@ jobs:
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
           
-          # Create or configure user 'admin' with password 'admin' and add to Administrators
-          $username = "admin"
-          $password = "admin"
-          if (!(Get-LocalUser -Name $username -ErrorAction SilentlyContinue)) {
-              New-LocalUser -Name $username -Password (ConvertTo-SecureString -AsPlainText $password -Force) -FullName "Administrator" -Description "RDP Admin User"
-          } else {
-              Set-LocalUser -Name $username -Password (ConvertTo-SecureString -AsPlainText $password -Force)
-          }
-          Add-LocalGroupMember -Group "Administrators" -Member $username -ErrorAction SilentlyContinue
-          
-          Write-Host "RDP Enabled. Username: admin | Password: admin"
+          # Using runneradmin with a valid secure password that passes Windows complexity rules
+          Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "Admin@12345" -Force)
+          Write-Host "RDP Enabled. Username: runneradmin | Password: Admin@12345"
 
       # ─────────────────────────────────────────────
       # STEP 4: Setup Work Directories & Session Info
       # ─────────────────────────────────────────────
       - name: Setup Work Directories
         run: |
-          New-Item -ItemType Directory -Force -Path "C:\Users\admin\Desktop\MyWork" | Out-Null
+          New-Item -ItemType Directory -Force -Path "C:\Users\runneradmin\Desktop\MyWork" | Out-Null
           New-Item -ItemType Directory -Force -Path "C:\checkpoint_data" | Out-Null
           
           $sessionInfo = @"
           === RDP Session Info ===
           Started: $(Get-Date)
-          Username: admin
-          Password: admin
+          Username: runneradmin
+          Password: Admin@12345
           
-          Your files are saved in: C:\Users\admin\Desktop\MyWork
+          Your files are saved in: C:\Users\runneradmin\Desktop\MyWork
           Checkpoints auto-save every 50 minutes.
           "@
-          Set-Content -Path "C:\Users\admin\Desktop\SESSION_INFO.txt" -Value $sessionInfo
+          Set-Content -Path "C:\Users\runneradmin\Desktop\SESSION_INFO.txt" -Value $sessionInfo
 
       # ─────────────────────────────────────────────
       # STEP 5: Download and Start Ngrok TCP Tunnel (With Auto-Print)
@@ -127,8 +119,8 @@ jobs:
             Write-Host " $publicUrl                                                 "
             Write-Host "------------------------------------------------------------"
             Write-Host " Login Credentials:                                         "
-            Write-Host " - Username: admin                                          "
-            Write-Host " - Password: admin                                          "
+            Write-Host " - Username: runneradmin                                    "
+            Write-Host " - Password: Admin@12345                                    "
             Write-Host "============================================================"
           } else {
             Write-Error "Failed to retrieve Ngrok TCP tunnel URL. Please check the runner logs."
@@ -156,7 +148,7 @@ jobs:
             $checkpointText = @"
           Last checkpoint: $timestamp
           Session elapsed: $elapsed minutes
-          Files are in: C:\Users\admin\Desktop\MyWork
+          Files are in: C:\Users\runneradmin\Desktop\MyWork
           "@
             Set-Content -Path "C:\checkpoint_data\checkpoint.txt" -Value $checkpointText
             Write-Host "=== CHECKPOINT SAVED at $timestamp (elapsed: $elapsed min) ==="
@@ -181,7 +173,7 @@ jobs:
         with:
           name: rdp-session-checkpoint
           path: |
-            C:\Users\admin\Desktop\MyWork
+            C:\Users\runneradmin\Desktop\MyWork
             C:\checkpoint_data\checkpoint.txt
           retention-days: 30
 
@@ -190,6 +182,6 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: |
-            C:\Users\admin\Desktop\MyWork
+            C:\Users\runneradmin\Desktop\MyWork
             C:\checkpoint_data
           key: rdp-checkpoint-main
