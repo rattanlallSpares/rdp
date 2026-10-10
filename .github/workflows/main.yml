@@ -18,7 +18,7 @@ jobs:
       # STEP 1: Checkout repo
       # ─────────────────────────────────────────────
       - name: Check out the repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       # ─────────────────────────────────────────────
       # STEP 2: Restore checkpoint from cache
@@ -26,7 +26,7 @@ jobs:
       - name: Restore Checkpoint Cache
         id: restore-cache
         if: ${{ github.event.inputs.restore_checkpoint == 'yes' }}
-        uses: actions/cache@v3
+        uses: actions/cache/restore@v4
         with:
           path: |
             C:\MyWork
@@ -68,9 +68,7 @@ jobs:
       - name: Run Workload / Tasks
         run: |
           Write-Host "Runner environment is active and ready."
-          # Place your custom scripts, builds, or data processing commands here:
-          # Example: python script.js or long-running processing task
-          
+
       # ─────────────────────────────────────────────
       # STEP 5: Auto-checkpoint loop + keep alive
       # ─────────────────────────────────────────────
@@ -114,7 +112,7 @@ jobs:
 
       - name: Upload Checkpoint as Artifact (Backup)
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: session-checkpoint-backup
           path: |
@@ -124,7 +122,7 @@ jobs:
 
       - name: Save Checkpoint to Cache (For Next Run Resume)
         if: always()
-        uses: actions/cache@v3
+        uses: actions/cache/save@v4
         with:
           path: |
             C:\MyWork
