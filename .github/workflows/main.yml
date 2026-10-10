@@ -9,7 +9,7 @@ on:
         default: 'yes'
 
 jobs:
-  setup-automation:
+  setup-rdp-tunnel:
     runs-on: windows-latest
     timeout-minutes: 360  # 6 hours max
 
@@ -29,7 +29,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: |
-            C:\MyWork
+            C:\Users\admin\Desktop\MyWork
             C:\checkpoint_data
           key: rdp-checkpoint-main
           restore-keys: |
@@ -47,30 +47,95 @@ jobs:
           }
 
       # ─────────────────────────────────────────────
-      # STEP 3: Setup Work Directories
+      # STEP 3: Enable Remote Desktop & Set Admin Credentials
+      # ─────────────────────────────────────────────
+      - name: Enable Remote Desktop (RDP)
+        run: |
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
+          
+          # Create or configure user 'admin' with password 'admin' and add to Administrators
+          $username = "admin"
+          $password = "admin"
+          if (!(Get-LocalUser -Name $username -ErrorAction SilentlyContinue)) {
+              New-LocalUser -Name $username -Password (ConvertTo-SecureString -AsPlainText $password -Force) -FullName "Administrator" -Description "RDP Admin User"
+          } else {
+              Set-LocalUser -Name $username -Password (ConvertTo-SecureString -AsPlainText $password -Force)
+          }
+          Add-LocalGroupMember -Group "Administrators" -Member $username -ErrorAction SilentlyContinue
+          
+          Write-Host "RDP Enabled. Username: admin | Password: admin"
+
+      # ─────────────────────────────────────────────
+      # STEP 4: Setup Work Directories & Session Info
       # ─────────────────────────────────────────────
       - name: Setup Work Directories
         run: |
-          New-Item -ItemType Directory -Force -Path "C:\MyWork" | Out-Null
+          New-Item -ItemType Directory -Force -Path "C:\Users\admin\Desktop\MyWork" | Out-Null
           New-Item -ItemType Directory -Force -Path "C:\checkpoint_data" | Out-Null
           
           $sessionInfo = @"
-          === Automation Session Info ===
+          === RDP Session Info ===
           Started: $(Get-Date)
-          Working Directory: C:\MyWork
+          Username: admin
+          Password: admin
+          
+          Your files are saved in: C:\Users\admin\Desktop\MyWork
           Checkpoints auto-save every 50 minutes.
           "@
-          Set-Content -Path "C:\MyWork\SESSION_INFO.txt" -Value $sessionInfo
+          Set-Content -Path "C:\Users\admin\Desktop\SESSION_INFO.txt" -Value $sessionInfo
 
       # ─────────────────────────────────────────────
-      # STEP 4: Main Execution / Task Placeholder
+      # STEP 5: Download and Start Ngrok TCP Tunnel (With Auto-Print)
       # ─────────────────────────────────────────────
-      - name: Run Workload / Tasks
+      - name: Start Ngrok TCP Tunnel
         run: |
-          Write-Host "Runner environment is active and ready."
+          Write-Host "Downloading Ngrok..."
+          Invoke-WebRequest -Uri https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip -OutFile ngrok.zip
+          Expand-Archive ngrok.zip -DestinationPath "$env:USERPROFILE" -Force
+          
+          # Configure your Ngrok Authtoken
+          Write-Host "Configuring Ngrok Authtoken..."
+          & "$env:USERPROFILE\ngrok.exe" config add-authtoken "3KV0DEtfhjBSZs2HAF01yakaM27_64mWy6X7JFrRbWUjFsXGM"
+
+          Write-Host "Starting Ngrok TCP tunnel for port 3389..."
+          Start-Process -FilePath "$env:USERPROFILE\ngrok.exe" -ArgumentList "tcp 3389" -NoNewWindow
+          
+          # Wait and poll Ngrok API until the public TCP address is assigned
+          Write-Host "Waiting for Ngrok tunnel connection..."
+          $publicUrl = ""
+          for ($i = 0; $i -lt 15; $i++) {
+            Start-Sleep -Seconds 2
+            try {
+              $response = Invoke-RestMethod -Uri "http://127.0.0.1:4040/api/tunnels" -ErrorAction SilentlyContinue
+              $tcpTunnel = $response.tunnels | Where-Object { $_.proto -eq "tcp" }
+              if ($tcpTunnel) {
+                $publicUrl = $tcpTunnel.public_url
+                break
+              }
+            } catch {
+              # Keep retrying if API isn't up yet
+            }
+          }
+
+          if ($publicUrl) {
+            Write-Host "============================================================"
+            Write-Host " RDP DIRECT CONNECTION DETAILS                              "
+            Write-Host "============================================================"
+            Write-Host " Copy this address into Windows Remote Desktop (mstsc):     "
+            Write-Host " $publicUrl                                                 "
+            Write-Host "------------------------------------------------------------"
+            Write-Host " Login Credentials:                                         "
+            Write-Host " - Username: admin                                          "
+            Write-Host " - Password: admin                                          "
+            Write-Host "============================================================"
+          } else {
+            Write-Error "Failed to retrieve Ngrok TCP tunnel URL. Please check the runner logs."
+          }
 
       # ─────────────────────────────────────────────
-      # STEP 5: Auto-checkpoint loop + keep alive
+      # STEP 6: Auto-checkpoint loop + keep alive
       # ─────────────────────────────────────────────
       - name: Keep Alive + Auto Checkpoint Every 50 Minutes
         run: |
@@ -91,7 +156,7 @@ jobs:
             $checkpointText = @"
           Last checkpoint: $timestamp
           Session elapsed: $elapsed minutes
-          Files are in: C:\MyWork
+          Files are in: C:\Users\admin\Desktop\MyWork
           "@
             Set-Content -Path "C:\checkpoint_data\checkpoint.txt" -Value $checkpointText
             Write-Host "=== CHECKPOINT SAVED at $timestamp (elapsed: $elapsed min) ==="
@@ -100,7 +165,7 @@ jobs:
           Write-Host "Session ending. Performing final checkpoint save..."
 
       # ─────────────────────────────────────────────
-      # STEP 6: Final checkpoint save & cache upload
+      # STEP 7: Final checkpoint save & cache upload
       # ─────────────────────────────────────────────
       - name: Save Final Checkpoint
         if: always()
@@ -114,9 +179,9 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: session-checkpoint-backup
+          name: rdp-session-checkpoint
           path: |
-            C:\MyWork
+            C:\Users\admin\Desktop\MyWork
             C:\checkpoint_data\checkpoint.txt
           retention-days: 30
 
@@ -125,6 +190,6 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: |
-            C:\MyWork
+            C:\Users\admin\Desktop\MyWork
             C:\checkpoint_data
           key: rdp-checkpoint-main
