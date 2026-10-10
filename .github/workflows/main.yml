@@ -78,29 +78,18 @@ jobs:
           Set-Content -Path "C:\Users\runneradmin\Desktop\SESSION_INFO.txt" -Value $sessionInfo
 
       # ─────────────────────────────────────────────
-      # STEP 5: Start Pinggy TCP Tunnel (Zero Config / Free)
+      # STEP 5: Start LocalTunnel (No Interactive Terminal Error)
       # ─────────────────────────────────────────────
-      - name: Start Pinggy TCP Tunnel
+      - name: Start RDP Tunnel
         run: |
-          Write-Host "Starting Pinggy TCP tunnel for port 3389..."
+          Write-Host "Installing LocalTunnel..."
+          npm install -g localtunnel
           
-          # Start SSH tunnel in a background PowerShell job so it stays open
-          $job = Start-Job -ScriptBlock {
-              ssh -p 443 -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -R0:localhost:3389 tcp@free.pinggy.io
-          }
+          Write-Host "Starting tunnel for port 3389..."
+          Start-Process -FilePath "lt" -ArgumentList "--port 3389" -NoNewWindow
           
-          # Wait a few seconds for connection and URL generation
-          Start-Sleep -Seconds 7
-          
-          # Fetch job output to display the public URL in the logs
-          $output = Receive-Job -Job $job
-          
+          Write-Host "Tunnel initiated successfully."
           Write-Host "============================================================"
-          Write-Host " RDP DIRECT CONNECTION DETAILS (Pinggy Tunnel)              "
-          Write-Host "============================================================"
-          Write-Host " Copy the tcp:// address below into Windows RDP (mstsc):    "
-          Write-Host $output
-          Write-Host "------------------------------------------------------------"
           Write-Host " Login Credentials:                                         "
           Write-Host " - Username: runneradmin                                    "
           Write-Host " - Password: Admin@12345                                    "
